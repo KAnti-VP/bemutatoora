@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - Bemutatóórák kezelése</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; color: #1e293b; margin: 0; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .login-box { max-width: 420px; margin: 60px auto; }
+    input, select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; }
+    button { background: #2563eb; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    button:hover { background: #1d4ed8; }
+    button.danger { background: #dc2626; }
+    button.danger:hover { background: #b91c1c; }
+    button.secondary { background: #475569; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 10px 8px; text-align: left; }
+    th { background: #f8fafc; font-weight: 700; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 16px; }
+    .tab-btn { background: #e2e8f0; color: #1e293b; }
+    .tab-btn.active { background: #2563eb; color: #fff; }
+    .hidden { display: none; }
+    .director-row { background: #fffbeb; }
+    .msg { padding: 10px; border-radius: 6px; margin-bottom: 12px; }
+    .msg.error { background: #fee2e2; color: #991b1b; }
+    .msg.ok { background: #dcfce7; color: #166534; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- BEJELENTKEZÉS -->
+    <div id="loginView" class="card login-box">
+      <h2>Admin bejelentkezés</h2>
+      <div id="loginMsg"></div>
+      <div id="stepEmail">
+        <p>Add meg az engedélyezett admin e-mail címedet a PIN-kód kéréséhez:</p>
+        <input type="email" id="adminEmail" placeholder="admin@iskola.hu" style="width: 100%; box-sizing: border-box; margin-bottom: 12px;">
+        <button onclick="requestPin()" style="width: 100%;">PIN-kód küldése e-mailben</button>
+      </div>
+      <div id="stepPin" class="hidden">
+        <p>Írd be az e-mailben kapott 6 számjegyű PIN-kódot:</p>
+        <input type="text" id="adminPin" placeholder="123456" maxlength="6" style="width: 100%; box-sizing: border-box; margin-bottom: 12px; letter-spacing: 3px; text-align: center; font-size: 1.2rem;">
+        <button onclick="verifyPin()" style="width: 100%;">Belépés</button>
+        <button class="secondary" onclick="resetLogin()" style="width: 100%; margin-top: 8px;">Vissza az e-mail megadásához</button>
+      </div>
+    </div>
+
+    <!-- ADMIN DASHBOARD -->
+    <div id="dashboardView" class="hidden">
+      <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h2 style="margin: 0;">Bemutatóórák Adminisztráció</h2>
+          <small id="loggedUserText" style="color: #64748b;"></small>
+        </div>
+        <button class="secondary" onclick="logout()">Kijelentkezés</button>
+      </div>
+
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('sessions', this)">1. Órák, Termek & Igazgatói beszélgetések</button>
+        <button class="tab-btn" onclick="switchTab('rooms', this)">2. Terem szerinti létszám (Tanuló + Kísérő)</button>
+        <button class="tab-btn" onclick="switchTab('registrations', this)">3. Összes jelentkező listája</button>
+      </div>
+
+      <!-- TAB 1: ÓRÁK ÉS BESZÉLGETÉSEK SZERKESZTÉSE -->
+      <div id="tab-sessions" class="card">
+        <h3>Foglalkozások, termek és létszámlimitek szerkesztése</h3>
+        <p style="font-size: 0.9rem; color: #475569;">Itt pontosíthatod a termeket, módosíthatod a max. férőhelyet (alapértelmezett: 15 fő, igazgatói beszélgetés: 5 fő), illetve ki/be kapcsolhatod az igazgatói beszélgetéseket bármelyik napon.</p>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Dátum / Óra</th>
+                <th>Típus / Tárgy</th>
+                <th>Oktató</th>
+                <th>Terem</th>
+                <th>Max. foglalás</th>
+                <th>Foglalt (+Kísérő)</th>
+                <th>Aktív?</th>
+                <th>Művelet</th>
+              </tr>
+            </thead>
+            <tbody id="sessionsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 2: TEREM SZERINTI LÉTSZÁM -->
+      <div id="tab-rooms" class="card hidden">
+        <h3>Terem szerinti összesített létszám (Tanuló + Kísérő)</h3>
+        <p style="font-size: 0.9rem; color: #475569;">A kísérő nem foglal el helyet a 15 fős limitből, de itt pontosan látható, hány fő tartózkodik majd fizikailag az adott teremben.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Dátum</th>
+              <th>Órasáv</th>
+              <th>Terem</th>
+              <th>Tárgy / Foglalkozás</th>
+              <th>Oktató</th>
+              <th>Jelentkező (fő)</th>
+              <th>Kísérő (+fő)</th>
+              <th>Összesen a teremben (fő)</th>
+            </tr>
+          </thead>
+          <tbody id="roomsTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- TAB 3: JELENTKEZŐK -->
+      <div id="tab-registrations" class="card hidden">
+        <h3>Regisztrált jelentkezők</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Szerepkör</th>
+              <th>Név</th>
+              <th>E-mail</th>
+              <th>Általános iskola</th>
+              <th>Kísérő</th>
+              <th>Választott óra</th>
+              <th>Terem</th>
+              <th>Törlés</th>
+            </tr>
+          </thead>
+          <tbody id="registrationsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function checkAuth() {
+      const res = await fetch('/api/admin/me');
+      const data = await res.json();
+      if (data.authenticated) {
+        document.getElementById('loginView').classList.add('hidden');
+        document.getElementById('dashboardView').classList.remove('hidden');
+        document.getElementById('loggedUserText').textContent = `Bejelentkezve: ${data.email}`;
+        loadDashboard();
+      }
+    }
+
+    function showLoginMsg(text, isError = true) {
+      const el = document.getElementById('loginMsg');
+      el.className = `msg ${isError ? 'error' : 'ok'}`;
+      el.textContent = text;
+    }
+
+    async function requestPin() {
+      const email = document.getElementById('adminEmail').value;
+      const res = await fetch('/api/admin/request-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (!res.ok) return showLoginMsg(data.error, true);
+
+      showLoginMsg(data.message, false);
+      document.getElementById('stepEmail').classList.add('hidden');
+      document.getElementById('stepPin').classList.remove('hidden');
+    }
+
+    async function verifyPin() {
+      const email = document.getElementById('adminEmail').value;
+      const pin = document.getElementById('adminPin').value;
+      const res = await fetch('/api/admin/verify-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, pin })
+      });
+      const data = await res.json();
+      if (!res.ok) return showLoginMsg(data.error, true);
+
+      checkAuth();
+    }
+
+    function resetLogin() {
+      document.getElementById('stepEmail').classList.remove('hidden');
+      document.getElementById('stepPin').classList.add('hidden');
+      document.getElementById('loginMsg').textContent = '';
+    }
+
+    async function logout() {
+      await fetch('/api/admin/logout', { method: 'POST' });
+      location.reload();
+    }
+
+    function switchTab(tabName, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      ['sessions', 'rooms', 'registrations'].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== tabName);
+      });
+    }
+
+    async function loadDashboard() {
+      const res = await fetch('/api/admin/dashboard');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      // 1. Sessions táblázat
+      const sBody = document.getElementById('sessionsTableBody');
+      sBody.innerHTML = data.sessions.map(s => `
+        <tr class="${s.slot_type === 'director' ? 'director-row' : ''}">
+          <td><strong>${s.date}</strong> (${s.day_name})<br>${s.period}. óra (${s.time})</td>
+          <td><strong>${s.subject}</strong><br><small>${s.group_name}</small></td>
+          <td>${s.teacher}</td>
+          <td><input type="text" id="room_${s.id}" value="${s.room || ''}" style="width: 160px;"></td>
+          <td><input type="number" id="cap_${s.id}" value="${s.max_capacity}" min="1" style="width: 65px;"></td>
+          <td><strong>${s.booked_count}</strong> / ${s.max_capacity} <small>(+${s.companion_count} kísérő)</small></td>
+          <td><input type="checkbox" id="act_${s.id}" ${s.is_active ? 'checked' : ''}></td>
+          <td><button onclick="saveSession(${s.id}, '${encodeURIComponent(s.title || '')}', '${encodeURIComponent(s.note || '')}')">Mentés</button></td>
+        </tr>
+      `).join('');
+
+      // 2. Terem szerinti összesítés
+      const rBody = document.getElementById('roomsTableBody');
+      rBody.innerHTML = data.roomSummary.map(r => `
+        <tr>
+          <td>${r.date} (${r.day_name})</td>
+          <td>${r.period}. óra (${r.time})</td>
+          <td><strong>${r.room}</strong></td>
+          <td>${r.subject}</td>
+          <td>${r.teacher}</td>
+          <td>${r.applicants_count} fő</td>
+          <td>+${r.companions_count} fő</td>
+          <td><strong style="color: #2563eb; font-size: 1.05rem;">${r.total_people} fő</strong></td>
+        </tr>
+      `).join('');
+
+      // 3. Jelentkezők
+      const regBody = document.getElementById('registrationsTableBody');
+      regBody.innerHTML = data.registrations.map(reg => `
+        <tr>
+          <td>${reg.role === 'student' ? '🎓 Tanuló' : '👨‍👩‍👧 Szülő'}</td>
+          <td><strong>${reg.name}</strong></td>
+          <td>${reg.email}</td>
+          <td>${reg.school}</td>
+          <td>${reg.has_companion ? 'Igen (+1 fő)' : 'Nem'}</td>
+          <td>${reg.date} ${reg.period}. óra – ${reg.subject} (${reg.teacher})</td>
+          <td>${reg.room}</td>
+          <td><button class="danger" onclick="deleteReg(${reg.id})">Törlés</button></td>
+        </tr>
+      `).join('');
+    }
+
+    async function saveSession(id, encodedTitle, encodedNote) {
+      const payload = {
+        room: document.getElementById(`room_${id}`).value,
+        max_capacity: document.getElementById(`cap_${id}`).value,
+        is_active: document.getElementById(`act_${id}`).checked,
+        title: decodeURIComponent(encodedTitle),
+        note: decodeURIComponent(encodedNote)
+      };
+
+      const res = await fetch(`/api/admin/sessions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        alert('Sikeresen mentve!');
+        loadDashboard();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Hiba a mentéskor');
+      }
+    }
+
+    async function deleteReg(id) {
+      if (!confirm('Biztosan törlöd ezt a jelentkezést?')) return;
+      await fetch(`/api/admin/registrations/${id}`, { method: 'DELETE' });
+      loadDashboard();
+    }
+
+    checkAuth();
+  </script>
+</body>
+</html>
