@@ -5,27 +5,47 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin - Bemutatóórák kezelése</title>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; color: #1e293b; margin: 0; padding: 20px; }
-    .container { max-width: 1200px; margin: 0 auto; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; color: #1e293b; margin: 0; padding: 10px; }
+    .container { max-width: 1500px; margin: 0 auto; }
     .card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
     .login-box { max-width: 420px; margin: 60px auto; }
-    input, select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; }
-    button { background: #2563eb; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    input, select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.92rem; box-sizing: border-box; }
+    button { background: #2563eb; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.88rem; }
     button:hover { background: #1d4ed8; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    button.success { background: #16a34a; }
+    button.success:hover { background: #15803d; }
     button.danger { background: #dc2626; }
     button.danger:hover { background: #b91c1c; }
     button.secondary { background: #475569; }
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th, td { border-bottom: 1px solid #e2e8f0; padding: 10px 8px; text-align: left; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 10px 8px; text-align: left; vertical-align: middle; }
     th { background: #f8fafc; font-weight: 700; }
-    .tabs { display: flex; gap: 10px; margin-bottom: 16px; }
-    .tab-btn { background: #e2e8f0; color: #1e293b; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .tab-btn { background: #e2e8f0; color: #1e293b; padding: 10px 16px; font-size: 0.95rem; }
     .tab-btn.active { background: #2563eb; color: #fff; }
     .hidden { display: none; }
     .director-row { background: #fffbeb; }
-    .msg { padding: 10px; border-radius: 6px; margin-bottom: 12px; }
+    .msg { padding: 10px; border-radius: 6px; margin-bottom: 12px; font-weight: 500; }
     .msg.error { background: #fee2e2; color: #991b1b; }
     .msg.ok { background: #dcfce7; color: #166534; }
+    .add-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .add-grid label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 4px; color: #334155; }
+    .add-grid input, .add-grid select { width: 100%; }
+
+    details.master-accordion { border: 1px solid #cbd5e1; border-radius: 10px; margin-bottom: 16px; background: #fff; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    details.master-accordion summary { background: #1e293b; color: #fff; padding: 14px 18px; font-size: 1.05rem; font-weight: 700; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+    details.master-accordion summary::-webkit-details-marker { display: none; }
+    details.master-accordion summary::after { content: '▼'; font-size: 0.85rem; transition: transform 0.2s; }
+    details.master-accordion[open] summary::after { transform: rotate(180deg); }
+    .master-body { padding: 20px; }
+    .master-add-bar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; }
+
+    #toastContainer { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; max-width: 420px; pointer-events: none; }
+    .toast { padding: 14px 18px; border-radius: 10px; color: #fff; font-weight: 600; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.25); opacity: 0; transform: translateY(15px); transition: all 0.3s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.success { background: #16a34a; }
+    .toast.error { background: #dc2626; }
   </style>
 </head>
 <body>
@@ -36,57 +56,203 @@
       <div id="loginMsg"></div>
       <div id="stepEmail">
         <p>Add meg az engedélyezett admin e-mail címedet a PIN-kód kéréséhez:</p>
-        <input type="email" id="adminEmail" placeholder="admin@iskola.hu" style="width: 100%; box-sizing: border-box; margin-bottom: 12px;">
-        <button onclick="requestPin()" style="width: 100%;">PIN-kód küldése e-mailben</button>
+        <input type="email" id="adminEmail" placeholder="admin@iskola.hu" style="width: 100%; margin-bottom: 12px;" onkeydown="if(event.key==='Enter') requestPin()">
+        <button type="button" id="reqPinBtn" onclick="requestPin()" style="width: 100%;">PIN-kód küldése e-mailben</button>
       </div>
       <div id="stepPin" class="hidden">
         <p>Írd be az e-mailben kapott 6 számjegyű PIN-kódot:</p>
-        <input type="text" id="adminPin" placeholder="123456" maxlength="6" style="width: 100%; box-sizing: border-box; margin-bottom: 12px; letter-spacing: 3px; text-align: center; font-size: 1.2rem;">
-        <button onclick="verifyPin()" style="width: 100%;">Belépés</button>
-        <button class="secondary" onclick="resetLogin()" style="width: 100%; margin-top: 8px;">Vissza az e-mail megadásához</button>
+        <input type="text" id="adminPin" placeholder="123456" maxlength="6" style="width: 100%; margin-bottom: 12px; letter-spacing: 3px; text-align: center; font-size: 1.2rem;" onkeydown="if(event.key==='Enter') verifyPin()">
+        <button type="button" id="verPinBtn" onclick="verifyPin()" style="width: 100%;">Belépés</button>
+        <button type="button" class="secondary" onclick="resetLogin()" style="width: 100%; margin-top: 8px;">Vissza az e-mail megadásához</button>
       </div>
     </div>
 
     <!-- ADMIN DASHBOARD -->
     <div id="dashboardView" class="hidden">
-      <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
+      <div class="card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
           <h2 style="margin: 0;">Bemutatóórák Adminisztráció</h2>
           <small id="loggedUserText" style="color: #64748b;"></small>
         </div>
-        <button class="secondary" onclick="logout()">Kijelentkezés</button>
-      </div>
-
-      <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('sessions', this)">1. Órák, Termek & Igazgatói beszélgetések</button>
-        <button class="tab-btn" onclick="switchTab('rooms', this)">2. Terem szerinti létszám (Tanuló + Kísérő)</button>
-        <button class="tab-btn" onclick="switchTab('registrations', this)">3. Összes jelentkező listája</button>
-      </div>
-
-      <!-- TAB 1: ÓRÁK ÉS BESZÉLGETÉSEK SZERKESZTÉSE -->
-      <div id="tab-sessions" class="card">
-        <h3>Foglalkozások, termek és létszámlimitek szerkesztése</h3>
-        <p style="font-size: 0.9rem; color: #475569;">Itt pontosíthatod a termeket, módosíthatod a max. férőhelyet (alapértelmezett: 15 fő, igazgatói beszélgetés: 5 fő), illetve ki/be kapcsolhatod az igazgatói beszélgetéseket bármelyik napon.</p>
-        <div style="overflow-x: auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>Dátum / Óra</th>
-                <th>Típus / Tárgy</th>
-                <th>Oktató</th>
-                <th>Terem</th>
-                <th>Max. foglalás</th>
-                <th>Foglalt (+Kísérő)</th>
-                <th>Aktív?</th>
-                <th>Művelet</th>
-              </tr>
-            </thead>
-            <tbody id="sessionsTableBody"></tbody>
-          </table>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <label for="deadlineInput" style="font-size: 0.85rem; font-weight: 700;">Jelentkezési határidő:</label>
+          <input type="datetime-local" id="deadlineInput">
+          <button type="button" onclick="saveDeadline()">Határidő mentése</button>
+          <button type="button" class="secondary" onclick="logout()">Kijelentkezés</button>
         </div>
       </div>
 
-      <!-- TAB 2: TEREM SZERINTI LÉTSZÁM -->
+      <div class="tabs">
+        <button type="button" class="tab-btn active" onclick="switchTab('sessions', this)">1. Órarend & Új óra felvétele</button>
+        <button type="button" class="tab-btn" onclick="switchTab('master', this)">2. Törzsadatok (Dátumok, Tanárok, Termek, Tantárgyak)</button>
+        <button type="button" class="tab-btn" onclick="switchTab('rooms', this)">3. Terem szerinti létszám</button>
+        <button type="button" class="tab-btn" onclick="switchTab('registrations', this)">4. Jelentkezők listája</button>
+      </div>
+
+      <!-- TAB 1: ÚJ ÓRA + MEGLÉVŐ ÓRÁK SZERKESZTÉSE -->
+      <div id="tab-sessions">
+        <div class="card" style="border-left: 4px solid #16a34a;">
+          <h3 style="margin-top: 0; color: #15803d;">+ Új óra / igazgatói beszélgetés hozzáadása</h3>
+          <form id="addSessionForm" onsubmit="addSession(event)">
+            <div class="add-grid">
+              <div>
+                <label for="newDateId">Dátum (nap automatikus) *</label>
+                <select id="newDateId" required></select>
+              </div>
+              <div>
+                <label for="newPeriod">Órasáv *</label>
+                <select id="newPeriod" required>
+                  <option value="1">1. óra (8:00 - 8:45)</option>
+                  <option value="2">2. óra (8:55 - 9:40)</option>
+                  <option value="3">3. óra (9:55 - 10:40)</option>
+                  <option value="4">4. óra (10:50 - 11:35)</option>
+                  <option value="5">5. óra (11:45 - 12:30)</option>
+                </select>
+              </div>
+              <div>
+                <label for="newTeacherId">Oktató / Igazgató *</label>
+                <select id="newTeacherId" required onchange="onNewTeacherChange()"></select>
+              </div>
+              <div>
+                <label for="newSubjectId">Tantárgy / Megnevezés *</label>
+                <select id="newSubjectId" required></select>
+              </div>
+              <div>
+                <label for="newRoomId">Terem *</label>
+                <select id="newRoomId" required></select>
+              </div>
+              <div>
+                <label for="newGroup">Osztály / Csoport</label>
+                <input type="text" id="newGroup" placeholder="Pl. 10.a">
+              </div>
+              <div>
+                <label for="newTitle">Óra témája / címe</label>
+                <input type="text" id="newTitle" placeholder="Pl. Játékfejlesztés">
+              </div>
+              <div>
+                <label for="newCap">Max. létszám (fő) *</label>
+                <input type="number" id="newCap" value="15" min="1" required>
+              </div>
+            </div>
+            <button type="submit" class="success">Új óra mentése</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Meglévő órák és igazgatói beszélgetések szerkesztése</h3>
+          <p style="font-size: 0.85rem; color: #475569;">A sárga sorok az igazgatói beszélgetéseket jelölik (ezekre csak szülők jelentkezhetnek). A rendszer automatikusan tiltja a tanár- és teremütközéseket.</p>
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Dátum</th>
+                  <th>Órasáv</th>
+                  <th>Tantárgy</th>
+                  <th>Oktató / Igazgató</th>
+                  <th>Terem</th>
+                  <th>Csoport</th>
+                  <th>Max.</th>
+                  <th>Foglalt</th>
+                  <th>Aktív</th>
+                  <th>Műveletek</th>
+                </tr>
+              </thead>
+              <tbody id="sessionsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: TÖRZSDATOK KEZELÉSE -->
+      <div id="tab-master" class="hidden">
+        <details class="master-accordion" open>
+          <summary>📅 Meghirdetett dátumok kezelése (a nap neve automatikusan frissül)</summary>
+          <div class="master-body">
+            <div class="master-add-bar">
+              <label for="addDateInput" style="font-weight: 600;">Új dátum:</label>
+              <input type="date" id="addDateInput" style="width: 200px;">
+              <button type="button" class="success" onclick="addMaster('dates')">+ Dátum hozzáadása</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 35%;">Dátum</th>
+                  <th style="width: 35%;">Automatikusan számított nap</th>
+                  <th style="width: 30%;">Műveletek</th>
+                </tr>
+              </thead>
+              <tbody id="datesTableBody"></tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="master-accordion">
+          <summary>👩‍🏫 Tanárok és Igazgató kezelése</summary>
+          <div class="master-body">
+            <div class="master-add-bar">
+              <input type="text" id="addTeacherName" placeholder="Oktató vagy igazgató teljes neve" style="flex: 1; min-width: 260px;">
+              <label style="display: flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer;">
+                <input type="checkbox" id="addTeacherDir" style="width: 18px; height: 18px;"> Igazgató (csak szülők jelentkezhetnek rá)
+              </label>
+              <button type="button" class="success" onclick="addMaster('teachers')">+ Oktató hozzáadása</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 55%;">Oktató / Igazgató neve</th>
+                  <th style="width: 20%;">Igazgatói státusz</th>
+                  <th style="width: 25%;">Műveletek</th>
+                </tr>
+              </thead>
+              <tbody id="teachersTableBody"></tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="master-accordion">
+          <summary>🚪 Termek kezelése</summary>
+          <div class="master-body">
+            <div class="master-add-bar">
+              <input type="text" id="addRoomName" placeholder="Terem neve vagy száma (pl. SZT2, 15. terem)" style="flex: 1; min-width: 260px;">
+              <label style="display: flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer;">
+                <input type="checkbox" id="addRoomPlaceholder" style="width: 18px; height: 18px;"> Ideiglenes / Kijelölés alatt (nincs teremütközés)
+              </label>
+              <button type="button" class="success" onclick="addMaster('rooms')">+ Terem hozzáadása</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 55%;">Terem megnevezése</th>
+                  <th style="width: 20%;">Ideiglenes (ütközésmentes)</th>
+                  <th style="width: 25%;">Műveletek</th>
+                </tr>
+              </thead>
+              <tbody id="roomsTableBody"></tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="master-accordion">
+          <summary>📚 Tantárgyak és foglalkozások kezelése</summary>
+          <div class="master-body">
+            <div class="master-add-bar">
+              <input type="text" id="addSubjectName" placeholder="Tantárgy vagy foglalkozás neve" style="flex: 1; min-width: 260px;">
+              <button type="button" class="success" onclick="addMaster('subjects')">+ Tantárgy hozzáadása</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 75%;">Tantárgy / Foglalkozás megnevezése</th>
+                  <th style="width: 25%;">Műveletek</th>
+                </tr>
+              </thead>
+              <tbody id="subjectsTableBody"></tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+
+      <!-- TAB 3: TEREM SZERINTI LÉTSZÁM -->
       <div id="tab-rooms" class="card hidden">
         <h3>Terem szerinti összesített létszám (Tanuló + Kísérő)</h3>
         <p style="font-size: 0.9rem; color: #475569;">A kísérő nem foglal el helyet a 15 fős limitből, de itt pontosan látható, hány fő tartózkodik majd fizikailag az adott teremben.</p>
@@ -100,14 +266,14 @@
               <th>Oktató</th>
               <th>Jelentkező (fő)</th>
               <th>Kísérő (+fő)</th>
-              <th>Összesen a teremben (fő)</th>
+              <th>Összesen a teremben</th>
             </tr>
           </thead>
-          <tbody id="roomsTableBody"></tbody>
+          <tbody id="roomSummaryTableBody"></tbody>
         </table>
       </div>
 
-      <!-- TAB 3: JELENTKEZŐK -->
+      <!-- TAB 4: JELENTKEZŐK -->
       <div id="tab-registrations" class="card hidden">
         <h3>Regisztrált jelentkezők</h3>
         <table>
@@ -129,15 +295,37 @@
     </div>
   </div>
 
+  <div id="toastContainer"></div>
+
   <script>
+    let masterData = { dates: [], teachers: [], rooms: [], subjects: [] };
+
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      requestAnimationFrame(() => toast.classList.add('show'));
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
     async function checkAuth() {
-      const res = await fetch('/api/admin/me');
-      const data = await res.json();
-      if (data.authenticated) {
-        document.getElementById('loginView').classList.add('hidden');
-        document.getElementById('dashboardView').classList.remove('hidden');
-        document.getElementById('loggedUserText').textContent = `Bejelentkezve: ${data.email}`;
-        loadDashboard();
+      try {
+        const res = await fetch('/api/admin/me');
+        const data = await res.json();
+        if (data.authenticated) {
+          document.getElementById('loginView').classList.add('hidden');
+          document.getElementById('dashboardView').classList.remove('hidden');
+          document.getElementById('loggedUserText').textContent = `Bejelentkezve: ${data.email}`;
+          loadDashboard();
+        }
+      } catch (err) {
+        console.error('Auth check hiba:', err);
       }
     }
 
@@ -149,37 +337,64 @@
 
     async function requestPin() {
       const email = document.getElementById('adminEmail').value;
-      const res = await fetch('/api/admin/request-pin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      const data = await res.json();
-      if (!res.ok) return showLoginMsg(data.error, true);
+      const btn = document.getElementById('reqPinBtn');
+      btn.disabled = true;
+      btn.textContent = 'Küldés folyamatban...';
 
-      showLoginMsg(data.message, false);
-      document.getElementById('stepEmail').classList.add('hidden');
-      document.getElementById('stepPin').classList.remove('hidden');
+      try {
+        const res = await fetch('/api/admin/request-pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showLoginMsg(data.error || 'Hiba a PIN kérésekor!', true);
+          return;
+        }
+
+        showLoginMsg(data.message, false);
+        document.getElementById('stepEmail').classList.add('hidden');
+        document.getElementById('stepPin').classList.remove('hidden');
+        document.getElementById('adminPin').focus();
+      } catch (err) {
+        showLoginMsg('Hálózati hiba történt: ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'PIN-kód küldése e-mailben';
+      }
     }
 
     async function verifyPin() {
       const email = document.getElementById('adminEmail').value;
       const pin = document.getElementById('adminPin').value;
-      const res = await fetch('/api/admin/verify-pin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, pin })
-      });
-      const data = await res.json();
-      if (!res.ok) return showLoginMsg(data.error, true);
+      const btn = document.getElementById('verPinBtn');
+      btn.disabled = true;
 
-      checkAuth();
+      try {
+        const res = await fetch('/api/admin/verify-pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, pin })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showLoginMsg(data.error || 'Hibás PIN-kód!', true);
+          return;
+        }
+        checkAuth();
+      } catch (err) {
+        showLoginMsg('Hálózati hiba: ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     function resetLogin() {
       document.getElementById('stepEmail').classList.remove('hidden');
       document.getElementById('stepPin').classList.add('hidden');
       document.getElementById('loginMsg').textContent = '';
+      document.getElementById('loginMsg').className = '';
     }
 
     async function logout() {
@@ -190,9 +405,30 @@
     function switchTab(tabName, btn) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      ['sessions', 'rooms', 'registrations'].forEach(t => {
+      ['sessions', 'master', 'rooms', 'registrations'].forEach(t => {
         document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== tabName);
       });
+    }
+
+    async function saveDeadline() {
+      const deadline = document.getElementById('deadlineInput').value;
+      const res = await fetch('/api/admin/settings/deadline', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deadline })
+      });
+      if (res.ok) showToast('Jelentkezési határidő mentve!', 'success');
+      else showToast('Hiba a határidő mentésekor!', 'error');
+    }
+
+    function onNewTeacherChange() {
+      const tid = Number(document.getElementById('newTeacherId').value);
+      const teacher = masterData.teachers.find(t => t.id === tid);
+      document.getElementById('newCap').value = (teacher && teacher.is_director) ? 5 : 15;
+    }
+
+    function buildOptions(list, selectedId, labelFn) {
+      return list.map(item => `<option value="${item.id}" ${item.id === selectedId ? 'selected' : ''}>${labelFn(item)}</option>`).join('');
     }
 
     async function loadDashboard() {
@@ -200,24 +436,95 @@
       if (!res.ok) return;
       const data = await res.json();
 
-      // 1. Sessions táblázat
-      const sBody = document.getElementById('sessionsTableBody');
-      sBody.innerHTML = data.sessions.map(s => `
-        <tr class="${s.slot_type === 'director' ? 'director-row' : ''}">
-          <td><strong>${s.date}</strong> (${s.day_name})<br>${s.period}. óra (${s.time})</td>
-          <td><strong>${s.subject}</strong><br><small>${s.group_name}</small></td>
-          <td>${s.teacher}</td>
-          <td><input type="text" id="room_${s.id}" value="${s.room || ''}" style="width: 160px;"></td>
-          <td><input type="number" id="cap_${s.id}" value="${s.max_capacity}" min="1" style="width: 65px;"></td>
-          <td><strong>${s.booked_count}</strong> / ${s.max_capacity} <small>(+${s.companion_count} kísérő)</small></td>
-          <td><input type="checkbox" id="act_${s.id}" ${s.is_active ? 'checked' : ''}></td>
-          <td><button onclick="saveSession(${s.id}, '${encodeURIComponent(s.title || '')}', '${encodeURIComponent(s.note || '')}')">Mentés</button></td>
+      masterData = {
+        dates: data.dates,
+        teachers: data.teachers,
+        rooms: data.rooms,
+        subjects: data.subjects
+      };
+
+      document.getElementById('deadlineInput').value = data.deadline;
+
+      document.getElementById('newDateId').innerHTML = buildOptions(data.dates, null, d => `${d.date} (${d.day_name})`);
+      document.getElementById('newTeacherId').innerHTML = buildOptions(data.teachers, null, t => `${t.name}${t.is_director ? ' [Igazgató]' : ''}`);
+      document.getElementById('newRoomId').innerHTML = buildOptions(data.rooms, null, r => r.name);
+      document.getElementById('newSubjectId').innerHTML = buildOptions(data.subjects, null, s => s.name);
+      onNewTeacherChange();
+
+      const periodOpts = (sel) => [1, 2, 3, 4, 5].map(p => `<option value="${p}" ${p === sel ? 'selected' : ''}>${p}. óra</option>`).join('');
+
+      document.getElementById('sessionsTableBody').innerHTML = data.sessions.map(s => `
+        <tr class="${s.is_director ? 'director-row' : ''}">
+          <td><select id="s_date_${s.id}">${buildOptions(data.dates, s.date_id, d => `${d.date} (${d.day_name})`)}</select></td>
+          <td><select id="s_per_${s.id}">${periodOpts(s.period)}</select></td>
+          <td><select id="s_sub_${s.id}" style="max-width: 220px;">${buildOptions(data.subjects, s.subject_id, sub => sub.name)}</select></td>
+          <td><select id="s_tea_${s.id}" style="max-width: 200px;">${buildOptions(data.teachers, s.teacher_id, t => t.name)}</select></td>
+          <td><select id="s_room_${s.id}" style="max-width: 200px;">${buildOptions(data.rooms, s.room_id, r => r.name)}</select></td>
+          <td><input type="text" id="s_grp_${s.id}" value="${s.group_name || ''}" style="width: 110px;"></td>
+          <td><input type="number" id="s_cap_${s.id}" value="${s.max_capacity}" min="1" style="width: 55px;"></td>
+          <td><strong>${s.booked_count}</strong>/${s.max_capacity} <small>(+${s.companion_count})</small></td>
+          <td><input type="checkbox" id="s_act_${s.id}" ${s.is_active ? 'checked' : ''}></td>
+          <td style="white-space: nowrap;">
+            <button type="button" onclick="saveSession(${s.id})">Mentés</button>
+            <button type="button" class="danger" onclick="deleteSession(${s.id})">X</button>
+          </td>
         </tr>
       `).join('');
 
-      // 2. Terem szerinti összesítés
-      const rBody = document.getElementById('roomsTableBody');
-      rBody.innerHTML = data.roomSummary.map(r => `
+      document.getElementById('datesTableBody').innerHTML = data.dates.map(d => `
+        <tr>
+          <td><input type="date" id="m_date_${d.id}" value="${d.date}" style="width: 200px;"></td>
+          <td><strong style="color: #2563eb;">${d.day_name}</strong></td>
+          <td style="white-space: nowrap;">
+            <button type="button" onclick="updateMaster('dates', ${d.id})">Mentés</button>
+            <button type="button" class="danger" onclick="deleteMaster('dates', ${d.id})">Törlés</button>
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('teachersTableBody').innerHTML = data.teachers.map(t => `
+        <tr>
+          <td><input type="text" id="m_tea_${t.id}" value="${t.name}" style="width: 100%;"></td>
+          <td>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" id="m_teadir_${t.id}" ${t.is_director ? 'checked' : ''} style="width: 18px; height: 18px;">
+              <span>${t.is_director ? 'Igen (Igazgató)' : 'Nem (Tanár)'}</span>
+            </label>
+          </td>
+          <td style="white-space: nowrap;">
+            <button type="button" onclick="updateMaster('teachers', ${t.id})">Mentés</button>
+            <button type="button" class="danger" onclick="deleteMaster('teachers', ${t.id})">Törlés</button>
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('roomsTableBody').innerHTML = data.rooms.map(r => `
+        <tr>
+          <td><input type="text" id="m_room_${r.id}" value="${r.name}" style="width: 100%;"></td>
+          <td>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" id="m_roomph_${r.id}" ${r.is_placeholder ? 'checked' : ''} style="width: 18px; height: 18px;">
+              <span>${r.is_placeholder ? 'Igen (Ideiglenes)' : 'Nem (Valódi terem)'}</span>
+            </label>
+          </td>
+          <td style="white-space: nowrap;">
+            <button type="button" onclick="updateMaster('rooms', ${r.id})">Mentés</button>
+            <button type="button" class="danger" onclick="deleteMaster('rooms', ${r.id})">Törlés</button>
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('subjectsTableBody').innerHTML = data.subjects.map(sub => `
+        <tr>
+          <td><input type="text" id="m_sub_${sub.id}" value="${sub.name}" style="width: 100%;"></td>
+          <td style="white-space: nowrap;">
+            <button type="button" onclick="updateMaster('subjects', ${sub.id})">Mentés</button>
+            <button type="button" class="danger" onclick="deleteMaster('subjects', ${sub.id})">Törlés</button>
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('roomSummaryTableBody').innerHTML = data.roomSummary.map(r => `
         <tr>
           <td>${r.date} (${r.day_name})</td>
           <td>${r.period}. óra (${r.time})</td>
@@ -230,9 +537,7 @@
         </tr>
       `).join('');
 
-      // 3. Jelentkezők
-      const regBody = document.getElementById('registrationsTableBody');
-      regBody.innerHTML = data.registrations.map(reg => `
+      document.getElementById('registrationsTableBody').innerHTML = data.registrations.map(reg => `
         <tr>
           <td>${reg.role === 'student' ? '🎓 Tanuló' : '👨‍👩‍👧 Szülő'}</td>
           <td><strong>${reg.name}</strong></td>
@@ -241,18 +546,51 @@
           <td>${reg.has_companion ? 'Igen (+1 fő)' : 'Nem'}</td>
           <td>${reg.date} ${reg.period}. óra – ${reg.subject} (${reg.teacher})</td>
           <td>${reg.room}</td>
-          <td><button class="danger" onclick="deleteReg(${reg.id})">Törlés</button></td>
+          <td><button type="button" class="danger" onclick="deleteReg(${reg.id})">Törlés</button></td>
         </tr>
       `).join('');
     }
 
-    async function saveSession(id, encodedTitle, encodedNote) {
+    async function addSession(e) {
+      e.preventDefault();
       const payload = {
-        room: document.getElementById(`room_${id}`).value,
-        max_capacity: document.getElementById(`cap_${id}`).value,
-        is_active: document.getElementById(`act_${id}`).checked,
-        title: decodeURIComponent(encodedTitle),
-        note: decodeURIComponent(encodedNote)
+        date_id: Number(document.getElementById('newDateId').value),
+        period: Number(document.getElementById('newPeriod').value),
+        teacher_id: Number(document.getElementById('newTeacherId').value),
+        subject_id: Number(document.getElementById('newSubjectId').value),
+        room_id: Number(document.getElementById('newRoomId').value),
+        group_name: document.getElementById('newGroup').value,
+        title: document.getElementById('newTitle').value,
+        max_capacity: Number(document.getElementById('newCap').value)
+      };
+
+      const res = await fetch('/api/admin/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        showToast('Új óra sikeresen hozzáadva!', 'success');
+        document.getElementById('newGroup').value = '';
+        document.getElementById('newTitle').value = '';
+        loadDashboard();
+      } else {
+        showToast(data.error || 'Hiba történt!', 'error');
+      }
+    }
+
+    async function saveSession(id) {
+      const payload = {
+        date_id: Number(document.getElementById(`s_date_${id}`).value),
+        period: Number(document.getElementById(`s_per_${id}`).value),
+        subject_id: Number(document.getElementById(`s_sub_${id}`).value),
+        teacher_id: Number(document.getElementById(`s_tea_${id}`).value),
+        room_id: Number(document.getElementById(`s_room_${id}`).value),
+        group_name: document.getElementById(`s_grp_${id}`).value,
+        max_capacity: Number(document.getElementById(`s_cap_${id}`).value),
+        is_active: document.getElementById(`s_act_${id}`).checked
       };
 
       const res = await fetch(`/api/admin/sessions/${id}`, {
@@ -260,19 +598,83 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      const data = await res.json();
 
       if (res.ok) {
-        alert('Sikeresen mentve!');
+        showToast('Módosítások elmentve!', 'success');
         loadDashboard();
       } else {
-        const err = await res.json();
-        alert(err.error || 'Hiba a mentéskor');
+        showToast(data.error || 'Hiba a mentéskor!', 'error');
+      }
+    }
+
+    async function deleteSession(id) {
+      if (!confirm('Biztosan törlöd ezt az órát?')) return;
+      const res = await fetch(`/api/admin/sessions/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast('Óra törölve!', 'success');
+        loadDashboard();
+      }
+    }
+
+    async function addMaster(type) {
+      let body = {};
+      if (type === 'dates') body = { date: document.getElementById('addDateInput').value };
+      if (type === 'teachers') body = { name: document.getElementById('addTeacherName').value, is_director: document.getElementById('addTeacherDir').checked };
+      if (type === 'rooms') body = { name: document.getElementById('addRoomName').value, is_placeholder: document.getElementById('addRoomPlaceholder').checked };
+      if (type === 'subjects') body = { name: document.getElementById('addSubjectName').value };
+
+      const res = await fetch(`/api/admin/${type}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Törzsadat sikeresen hozzáadva!', 'success');
+        loadDashboard();
+      } else {
+        showToast(data.error || 'Hiba történt!', 'error');
+      }
+    }
+
+    async function updateMaster(type, id) {
+      let body = {};
+      if (type === 'dates') body = { date: document.getElementById(`m_date_${id}`).value };
+      if (type === 'teachers') body = { name: document.getElementById(`m_tea_${id}`).value, is_director: document.getElementById(`m_teadir_${id}`).checked };
+      if (type === 'rooms') body = { name: document.getElementById(`m_room_${id}`).value, is_placeholder: document.getElementById(`m_roomph_${id}`).checked };
+      if (type === 'subjects') body = { name: document.getElementById(`m_sub_${id}`).value };
+
+      const res = await fetch(`/api/admin/${type}/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Törzsadat frissítve!', 'success');
+        loadDashboard();
+      } else {
+        showToast(data.error || 'Hiba a mentéskor!', 'error');
+      }
+    }
+
+    async function deleteMaster(type, id) {
+      if (!confirm('Biztosan törlöd ezt az elemet?')) return;
+      const res = await fetch(`/api/admin/${type}/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Törölve!', 'success');
+        loadDashboard();
+      } else {
+        showToast(data.error || 'Nem törölhető!', 'error');
       }
     }
 
     async function deleteReg(id) {
       if (!confirm('Biztosan törlöd ezt a jelentkezést?')) return;
       await fetch(`/api/admin/registrations/${id}`, { method: 'DELETE' });
+      showToast('Jelentkezés törölve!', 'success');
       loadDashboard();
     }
 
