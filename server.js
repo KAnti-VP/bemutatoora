@@ -209,13 +209,15 @@ app.post('/api/admin/request-pin', async (req, res) => {
   `).run(cleanEmail, pin, expiresAt);
 
   try {
-    await transporter.sendMail({
-      from: `"Bemutatóórák Admin" <${process.env.EMAIL_SENDER}>`,
-      to: cleanEmail,
-      subject: 'Admin belépési PIN-kód - Bemutatóórák',
-      text: `Szia!\n\nAz admin felületre történő belépéshez szükséges egyszer használatos PIN-kódod: ${pin}\n\nA kód 10 percig érvényes.`,
-      html: `<p>Szia!</p><p>Az admin felületre történő belépéshez szükséges egyszer használatos PIN-kódod:</p><h2 style="letter-spacing: 4px; color: #2563eb;">${pin}</h2><p>A kód 10 percig érvényes.</p>`
-    });
+    // await transporter.sendMail({
+    //   from: `"Bemutatóórák Admin" <${process.env.EMAIL_SENDER}>`,
+    //   to: cleanEmail,
+    //   subject: 'Admin belépési PIN-kód - Bemutatóórák',
+    //   text: `Szia!\n\nAz admin felületre történő belépéshez szükséges egyszer használatos PIN-kódod: ${pin}\n\nA kód 10 percig érvényes.`,
+    //   html: `<p>Szia!</p><p>Az admin felületre történő belépéshez szükséges egyszer használatos PIN-kódod:</p><h2 style="letter-spacing: 4px; color: #2563eb;">${pin}</h2><p>A kód 10 percig érvényes.</p>`
+    // });
+
+    await sendPinEmail(cleanEmail, pin);
 
     res.json({ success: true, message: 'A 6 számjegyű PIN-kódot elküldtük az e-mail címedre!' });
   } catch (error) {
@@ -348,3 +350,37 @@ app.listen(PORT, () => {
   console.log(`Szerver fut: http://localhost:${PORT}`);
   console.log(`Admin felület: http://localhost:${PORT}/admin`);
 });
+
+// ==========================================
+// E-MAIL KÜLDŐ SEGÉDFÜGGVÉNY (Google Apps Script HTTPS)
+// ==========================================
+async function sendPinEmail(toEmail, pin) {
+  console.log(`[ADMIN PIN] Címzett: ${toEmail} | Kód: ${pin}`);
+
+  if (!process.env.GAS_EMAIL_URL) {
+    throw new Error('Nincs beállítva a GAS_EMAIL_URL környezeti változó a Renderen!');
+  }
+
+  const response = await fetch(process.env.GAS_EMAIL_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      secret: process.env.SESSION_SECRET || 'bemutatoorak-secret',
+      to: toEmail,
+      subject: 'Admin belépési PIN-kód - Bemutatóórák',
+      html: `
+        <p>Szia!</p>
+        <p>Az admin felületre történő belépéshez szükséges egyszer használatos PIN-kódod:</p>
+        <h2 style="letter-spacing: 4px; color: #2563eb;">${pin}</h2>
+        <p>A kód 10 percig érvényes.</p>
+      `
+    })
+  });
+
+  const result = await response.json();
+  if (!response.ok || result.error) {
+    throw new Error(`Google Apps Script e-mail hiba: ${result.error || response.statusText}`);
+  }
+}
