@@ -3,7 +3,7 @@ import session from 'express-session';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import db from './database.js';
+import db, { initializeDatabase, exportFullState } from './database.js';
 
 dotenv.config();
 
@@ -71,10 +71,55 @@ function requireAdmin(req, res, next) {
 }
 
 // ==========================================
+// AUTOMATIKUS GOOGLE DRIVE SZINKRONIZÁLÁS
+// ==========================================
+let backupTimeout = null;
+
+function triggerAutoBackup() {
+  if (!process.env.GAS_EMAIL_URL) return;
+
+  // 1 másodperces késleltetés (debounce), hogy több gyors módosítás egyetlen Drive írással fusson le
+  clearTimeout(backupTimeout);
+  backupTimeout = setTimeout(async () => {
+    try {
+      const backup = exportFullState();
+      const response = await fetch(process.env.GAS_EMAIL_URL, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          secret: process.env.SESSION_SECRET || 'bemutatoorak-secret',
+          action: 'save_backup',
+          backup
+        })
+      });
+      const resData = await response.json();
+      if (resData.success) {
+        console.log(`☁️ Adatbázis automatikusan mentve a Google Drive-ra (${new Date().toLocaleTimeString('hu-HU')})`);
+      }
+    } catch (err) {
+      console.error('⚠️ Google Drive automatikus mentési hiba:', err.message);
+    }
+  }, 1000);
+}
+
+// Middleware: Minden sikeres adatmódosító kérés (POST/PUT/DELETE) után elindítja a mentést
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    const isWriteMethod = ['POST', 'PUT', 'DELETE'].includes(req.method);
+    const isAuthRoute = req.path.includes('/admin/request-pin') || req.path.includes('/admin/verify-pin') || req.path.includes('/admin/logout');
+    if (isWriteMethod && !isAuthRoute && res.statusCode >= 200 && res.statusCode < 300) {
+      triggerAutoBackup();
+    }
+  });
+  next();
+});
+
+// ==========================================
 // E-MAIL KÜLDŐ SEGÉDFÜGGVÉNY (Google Apps Script HTTPS)
 // ==========================================
 async function sendPinEmail(toEmail, pin) {
-  console.log(`[ADMIN PIN] Címzett: ${toEmail} | Kód: ${pin}`);
+  // console.log(`[ADMIN PIN] Címzett: ${toEmail} | Kód: ${pin}`);
 
   if (!process.env.GAS_EMAIL_URL) {
     throw new Error('Nincs beállítva a GAS_EMAIL_URL környezeti változó a Renderen!');
@@ -85,6 +130,7 @@ async function sendPinEmail(toEmail, pin) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       secret: process.env.SESSION_SECRET || 'bemutatoorak-secret',
+      action: 'send_email',
       to: toEmail,
       subject: 'Admin belépési PIN-kód - Bemutatóórák',
       html: `
@@ -1069,6 +1115,11 @@ app.post('/api/admin/import/registrations', requireAdmin, (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Szerver fut: http://localhost:${PORT}`);
+initializeDatabase().then((needsInitialBackup) => {
+  if (needsInitialBackup) {
+    triggerAutoBackup();
+  }
+  app.listen(PORT, () => {
+    console.log(`Szerver fut: http://localhost:${PORT}`);
+  });
 });
