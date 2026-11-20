@@ -1160,3 +1160,4 @@ initializeDatabase().then((needsInitialBackup) => {
     console.log(`Szerver fut: http://localhost:${PORT}`);
   });
 });
+

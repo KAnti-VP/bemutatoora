@@ -214,38 +214,57 @@ function seedFromInitialJson() {
 
 // Szerver indulásakor lefutó automatikus visszaállító függvény
 export async function initializeDatabase() {
-  const dateCount = db.prepare('SELECT COUNT(*) as count FROM event_dates').get().count;
-  if (dateCount > 0) {
-    console.log('Helyi SQLite adatbázis már tartalmaz adatokat.');
-    return false;
-  }
+  const gasUrl = process.env.GAS_EMAIL_URL;
+  const secret = process.env.SESSION_SECRET || 'bemutatoorak-secret';
 
-  // Ha üres az adatbázis (pl. Render újraindulás), megpróbáljuk betölteni a Google Drive-ról
-  if (process.env.GAS_EMAIL_URL) {
+  // 1. Minden induláskor megpróbáljuk letölteni a legfrissebb állapotot a Google Drive-ról
+  if (gasUrl) {
     try {
-      console.log('Üres adatbázis észlelve – állapot ellenőrzése a Google Drive-on...');
-      const response = await fetch(process.env.GAS_EMAIL_URL, {
+      console.log('🔄 Google Drive biztonsági mentés ellenőrzése...');
+      const response = await fetch(gasUrl, {
         method: 'POST',
         redirect: 'follow',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
-          secret: process.env.SESSION_SECRET || 'bemutatoorak-secret',
+          secret,
           action: 'load_backup'
         })
       });
 
-      const result = await response.json();
+      const rawText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Nem JSON válasz a Google-től: ${rawText.slice(0, 150)}`);
+      }
+
+      if (result.error) {
+        throw new Error(`Google Apps Script hiba: ${result.error}`);
+      }
+
       if (result.found && result.backup) {
         restoreFullState(result.backup);
-        console.log(`✅ Sikeres automatikus visszaállítás a Google Drive-ról! (Mentés ideje: ${result.backup.savedAt})`);
-        return false;
+        console.log(`✅ SIKER: Adatbázis helyreállítva a Google Drive-ról! (Mentés ideje: ${result.backup.savedAt}, Órák száma: ${result.backup.sessions?.length || 0})`);
+        return false; // Nem kell azonnali visszamentés, hiszen most töltöttük le
+      } else {
+        console.log('ℹ️ Még nem található mentési fájl a Google Drive-on.');
       }
     } catch (err) {
-      console.error('⚠️ Google Drive visszaállítási hiba (átállás alapértelmezett JSON-ra):', err.message);
+      console.error('❌ Google Drive visszaállítás sikertelen:', err.message);
     }
+  } else {
+    console.warn('⚠️ Figyelem: A GAS_EMAIL_URL környezeti változó nincs beállítva!');
   }
 
-  // Ha még nincs Drive mentés, betöltjük az oraadatok.json-t, és jelezzük, hogy el kell menteni Drive-ra
+  // 2. Ha már van helyi adatbázis (pl. lokális gépen), megtartjuk
+  const dateCount = db.prepare('SELECT COUNT(*) as count FROM event_dates').get().count;
+  if (dateCount > 0) {
+    console.log('ℹ️ Helyi SQLite adatbázis megtartva.');
+    return false;
+  }
+
+  // 3. Csak akkor töltjük be az oraadatok.json-t, ha sem Drive mentés, sem helyi adatbázis nincs
   seedFromInitialJson();
   return true;
 }
