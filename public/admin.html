@@ -6,7 +6,7 @@
   <title>Admin - Bemutatóórák kezelése</title>
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; color: #1e293b; margin: 0; padding: 10px; }
-    .container { max-width: 1500px; margin: 0 auto; }
+    .container { max-width: 90wh; margin: 0 auto; }
     .card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
     .login-box { max-width: 420px; margin: 60px auto; }
     input, select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.92rem; box-sizing: border-box; }
@@ -19,7 +19,7 @@
     button.danger:hover { background: #b91c1c; }
     button.secondary { background: #475569; }
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th, td { border-bottom: 1px solid #e2e8f0; padding: 10px 8px; text-align: left; vertical-align: middle; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 10px 6px; text-align: left; vertical-align: middle; }
     th { background: #f8fafc; font-weight: 700; }
     .tabs { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
     .tab-btn { background: #e2e8f0; color: #1e293b; padding: 10px 16px; font-size: 0.95rem; }
@@ -148,6 +148,7 @@
                   <th>Dátum</th>
                   <th>Órasáv</th>
                   <th>Tantárgy</th>
+                  <th>Óra témája / címe</th>
                   <th>Oktató / Igazgató</th>
                   <th>Terem</th>
                   <th>Csoport</th>
@@ -300,6 +301,15 @@
   <script>
     let masterData = { dates: [], teachers: [], rooms: [], subjects: [] };
 
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
     function showToast(message, type = 'success') {
       const container = document.getElementById('toastContainer');
       const toast = document.createElement('div');
@@ -428,7 +438,7 @@
     }
 
     function buildOptions(list, selectedId, labelFn) {
-      return list.map(item => `<option value="${item.id}" ${item.id === selectedId ? 'selected' : ''}>${labelFn(item)}</option>`).join('');
+      return list.map(item => `<option value="${item.id}" ${item.id === selectedId ? 'selected' : ''}>${escapeHtml(labelFn(item))}</option>`).join('');
     }
 
     async function loadDashboard() {
@@ -457,12 +467,13 @@
         <tr class="${s.is_director ? 'director-row' : ''}">
           <td><select id="s_date_${s.id}">${buildOptions(data.dates, s.date_id, d => `${d.date} (${d.day_name})`)}</select></td>
           <td><select id="s_per_${s.id}">${periodOpts(s.period)}</select></td>
-          <td><select id="s_sub_${s.id}" style="max-width: 220px;">${buildOptions(data.subjects, s.subject_id, sub => sub.name)}</select></td>
-          <td><select id="s_tea_${s.id}" style="max-width: 200px;">${buildOptions(data.teachers, s.teacher_id, t => t.name)}</select></td>
-          <td><select id="s_room_${s.id}" style="max-width: 200px;">${buildOptions(data.rooms, s.room_id, r => r.name)}</select></td>
-          <td><input type="text" id="s_grp_${s.id}" value="${s.group_name || ''}" style="width: 110px;"></td>
-          <td><input type="number" id="s_cap_${s.id}" value="${s.max_capacity}" min="1" style="width: 55px;"></td>
-          <td><strong>${s.booked_count}</strong>/${s.max_capacity} <small>(+${s.companion_count})</small></td>
+          <td><select id="s_sub_${s.id}" style="max-width: 190px;">${buildOptions(data.subjects, s.subject_id, sub => sub.name)}</select></td>
+          <td><input type="text" id="s_tit_${s.id}" value="${escapeHtml(s.title)}" placeholder="Óra címe..." style="width: 210px;"></td>
+          <td><select id="s_tea_${s.id}" style="max-width: 180px;">${buildOptions(data.teachers, s.teacher_id, t => t.name)}</select></td>
+          <td><select id="s_room_${s.id}" style="max-width: 180px;">${buildOptions(data.rooms, s.room_id, r => r.name)}</select></td>
+          <td><input type="text" id="s_grp_${s.id}" value="${escapeHtml(s.group_name)}" style="width: 95px;"></td>
+          <td><input type="number" id="s_cap_${s.id}" value="${s.max_capacity}" min="1" style="width: 52px;"></td>
+          <td style="white-space: nowrap;"><strong>${s.booked_count}</strong>/${s.max_capacity} <small>(+${s.companion_count})</small></td>
           <td><input type="checkbox" id="s_act_${s.id}" ${s.is_active ? 'checked' : ''}></td>
           <td style="white-space: nowrap;">
             <button type="button" onclick="saveSession(${s.id})">Mentés</button>
@@ -484,7 +495,7 @@
 
       document.getElementById('teachersTableBody').innerHTML = data.teachers.map(t => `
         <tr>
-          <td><input type="text" id="m_tea_${t.id}" value="${t.name}" style="width: 100%;"></td>
+          <td><input type="text" id="m_tea_${t.id}" value="${escapeHtml(t.name)}" style="width: 100%;"></td>
           <td>
             <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
               <input type="checkbox" id="m_teadir_${t.id}" ${t.is_director ? 'checked' : ''} style="width: 18px; height: 18px;">
@@ -500,7 +511,7 @@
 
       document.getElementById('roomsTableBody').innerHTML = data.rooms.map(r => `
         <tr>
-          <td><input type="text" id="m_room_${r.id}" value="${r.name}" style="width: 100%;"></td>
+          <td><input type="text" id="m_room_${r.id}" value="${escapeHtml(r.name)}" style="width: 100%;"></td>
           <td>
             <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
               <input type="checkbox" id="m_roomph_${r.id}" ${r.is_placeholder ? 'checked' : ''} style="width: 18px; height: 18px;">
@@ -516,7 +527,7 @@
 
       document.getElementById('subjectsTableBody').innerHTML = data.subjects.map(sub => `
         <tr>
-          <td><input type="text" id="m_sub_${sub.id}" value="${sub.name}" style="width: 100%;"></td>
+          <td><input type="text" id="m_sub_${sub.id}" value="${escapeHtml(sub.name)}" style="width: 100%;"></td>
           <td style="white-space: nowrap;">
             <button type="button" onclick="updateMaster('subjects', ${sub.id})">Mentés</button>
             <button type="button" class="danger" onclick="deleteMaster('subjects', ${sub.id})">Törlés</button>
@@ -528,9 +539,9 @@
         <tr>
           <td>${r.date} (${r.day_name})</td>
           <td>${r.period}. óra (${r.time})</td>
-          <td><strong>${r.room}</strong></td>
-          <td>${r.subject}</td>
-          <td>${r.teacher}</td>
+          <td><strong>${escapeHtml(r.room)}</strong></td>
+          <td>${escapeHtml(r.subject)}</td>
+          <td>${escapeHtml(r.teacher)}</td>
           <td>${r.applicants_count} fő</td>
           <td>+${r.companions_count} fő</td>
           <td><strong style="color: #2563eb; font-size: 1.05rem;">${r.total_people} fő</strong></td>
@@ -540,12 +551,12 @@
       document.getElementById('registrationsTableBody').innerHTML = data.registrations.map(reg => `
         <tr>
           <td>${reg.role === 'student' ? '🎓 Tanuló' : '👨‍👩‍👧 Szülő'}</td>
-          <td><strong>${reg.name}</strong></td>
-          <td>${reg.email}</td>
-          <td>${reg.school}</td>
+          <td><strong>${escapeHtml(reg.name)}</strong></td>
+          <td>${escapeHtml(reg.email)}</td>
+          <td>${escapeHtml(reg.school)}</td>
           <td>${reg.has_companion ? 'Igen (+1 fő)' : 'Nem'}</td>
-          <td>${reg.date} ${reg.period}. óra – ${reg.subject} (${reg.teacher})</td>
-          <td>${reg.room}</td>
+          <td>${reg.date} ${reg.period}. óra – ${escapeHtml(reg.subject)} (${escapeHtml(reg.teacher)})</td>
+          <td>${escapeHtml(reg.room)}</td>
           <td><button type="button" class="danger" onclick="deleteReg(${reg.id})">Törlés</button></td>
         </tr>
       `).join('');
@@ -586,6 +597,7 @@
         date_id: Number(document.getElementById(`s_date_${id}`).value),
         period: Number(document.getElementById(`s_per_${id}`).value),
         subject_id: Number(document.getElementById(`s_sub_${id}`).value),
+        title: document.getElementById(`s_tit_${id}`).value,
         teacher_id: Number(document.getElementById(`s_tea_${id}`).value),
         room_id: Number(document.getElementById(`s_room_${id}`).value),
         group_name: document.getElementById(`s_grp_${id}`).value,

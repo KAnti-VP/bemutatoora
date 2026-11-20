@@ -463,10 +463,10 @@ app.post('/api/admin/sessions', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Meglévő óra szerkesztése (dátum, órasáv, oktató, terem, tantárgy, létszám, aktivitás)
+// Meglévő óra szerkesztése (dátum, órasáv, oktató, terem, tantárgy, cím, létszám, aktivitás)
 app.put('/api/admin/sessions/:id', requireAdmin, (req, res) => {
   const sessionId = Number(req.params.id);
-  const { date_id, period, teacher_id, room_id, subject_id, group_name, max_capacity, is_active } = req.body;
+  const { date_id, period, teacher_id, room_id, subject_id, title, group_name, max_capacity, is_active } = req.body;
 
   const cap = parseInt(max_capacity, 10);
   if (isNaN(cap) || cap < 1) {
@@ -493,9 +493,21 @@ app.put('/api/admin/sessions/:id', requireAdmin, (req, res) => {
 
   db.prepare(`
     UPDATE sessions
-    SET date_id = ?, period = ?, time = ?, teacher_id = ?, room_id = ?, subject_id = ?, group_name = ?, max_capacity = ?, is_active = ?
+    SET date_id = ?, period = ?, time = ?, teacher_id = ?, room_id = ?, subject_id = ?, title = ?, group_name = ?, max_capacity = ?, is_active = ?
     WHERE id = ?
-  `).run(date_id, periodNum, time, teacher_id, room_id, subject_id, (group_name || '').trim(), cap, activeFlag, sessionId);
+  `).run(
+    date_id,
+    periodNum,
+    time,
+    teacher_id,
+    room_id,
+    subject_id,
+    (title || '').trim(),
+    (group_name || '').trim(),
+    cap,
+    activeFlag,
+    sessionId
+  );
 
   res.json({ success: true });
 });
