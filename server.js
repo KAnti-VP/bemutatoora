@@ -646,10 +646,427 @@ app.delete('/api/admin/subjects/:id', requireAdmin, (req, res) => {
   }
 });
 
-// Jelentkezés törlése
+// ==========================================
+// SESSIONS (ÓRAREND) CSV/JSON EXPORT ÉS JSON IMPORT
+// ==========================================
+
+// Sessions kimentése CSV fájlba (Excelhez)
+app.get('/api/admin/export/sessions.csv', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT 
+      s.id,
+      d.date,
+      s.period,
+      s.time,
+      sub.name AS subject,
+      s.title,
+      t.name AS teacher,
+      t.is_director,
+      r.name AS room,
+      s.group_name,
+      s.max_capacity,
+      s.is_active,
+      COUNT(reg.id) AS booked_count,
+      COALESCE(SUM(reg.has_companion), 0) AS companion_count
+    FROM sessions s
+    JOIN event_dates d ON s.date_id = d.id
+    JOIN teachers t ON s.teacher_id = t.id
+    JOIN rooms r ON s.room_id = r.id
+    JOIN subjects sub ON s.subject_id = sub.id
+    LEFT JOIN registrations reg ON s.id = reg.session_id
+    GROUP BY s.id
+    ORDER BY d.date ASC, s.period ASC, t.is_director ASC, sub.name ASC
+  `).all();
+
+  const escapeCsv = (val) => {
+    if (val === null || val === undefined) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const headers = [
+    'ID',
+    'Dátum',
+    'Nap',
+    'Órasáv',
+    'Időpont',
+    'Típus',
+    'Tantárgy / Megnevezés',
+    'Óra témája / címe',
+    'Oktató / Igazgató',
+    'Terem',
+    'Csoport',
+    'Max. férőhely',
+    'Foglalt (fő)',
+    'Kísérő (+fő)',
+    'Összesen a teremben (fő)',
+    'Aktív'
+  ];
+
+  const csvLines = [headers.map(escapeCsv).join(';')];
+
+  for (const row of rows) {
+    const line = [
+      row.id,
+      row.date,
+      getHungarianDayName(row.date),
+      `${row.period}. óra`,
+      row.time,
+      row.is_director ? 'Igazgatói beszélgetés' : 'Tanóra',
+      row.subject,
+      row.title || '',
+      row.teacher,
+      row.room,
+      row.group_name || '',
+      row.max_capacity,
+      row.booked_count,
+      row.companion_count,
+      row.booked_count + row.companion_count,
+      row.is_active ? 'Igen' : 'Nem'
+    ].map(escapeCsv).join(';');
+
+    csvLines.push(line);
+  }
+
+  const csvContent = '\uFEFF' + csvLines.join('\r\n');
+  const today = new Date().toISOString().slice(0, 10);
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="orarend_sessions_${today}.csv"`);
+  res.send(csvContent);
+});
+
+// Sessions kimentése JSON fájlba (relációs kapcsolatokkal a visszatöltéshez)
+app.get('/api/admin/export/sessions.json', requireAdmin, (req, res) => {
+  const sessions = db.prepare(`
+    SELECT 
+      d.date,
+      s.period,
+      s.time,
+      sub.name AS subject,
+      s.title,
+      t.name AS teacher,
+      t.is_director,
+      r.name AS room,
+      r.is_placeholder,
+      s.group_name,
+      s.note,
+      s.max_capacity,
+      s.is_active
+    FROM sessions s
+    JOIN event_dates d ON s.date_id = d.id
+    JOIN teachers t ON s.teacher_id = t.id
+    JOIN rooms r ON s.room_id = r.id
+    JOIN subjects sub ON s.subject_id = sub.id
+    ORDER BY d.date ASC, s.period ASC, t.is_director ASC, sub.name ASC
+  `).all();
+
+  const exportPayload = {
+    exportedAt: new Date().toISOString(),
+    type: 'bemutatoorak_sessions_backup',
+    count: sessions.length,
+    sessions
+  };
+
+  const today = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="orarend_sessions_${today}.json"`);
+  res.send(JSON.stringify(exportPayload, null, 2));
+});
+
+// Sessions visszatöltése JSON fájlból (törzsadatok automatikus feloldásával/létrehozásával)
+app.post('/api/admin/import/sessions', requireAdmin, (req, res) => {
+  const { sessions, replaceExisting } = req.body;
+
+  if (!Array.isArray(sessions) || sessions.length === 0) {
+    return res.status(400).json({ error: 'Érvénytelen vagy üres JSON fájl! Nem található benne "sessions" lista.' });
+  }
+
+  const importTx = db.transaction((items) => {
+    // Ha a felhasználó a teljes cserét kérte, töröljük a meglévő órákat
+    if (replaceExisting) {
+      db.prepare('DELETE FROM sessions').run();
+    }
+
+    const insertDate = db.prepare('INSERT OR IGNORE INTO event_dates (date) VALUES (?)');
+    const getDateId = db.prepare('SELECT id FROM event_dates WHERE date = ?');
+
+    const insertTeacher = db.prepare('INSERT OR IGNORE INTO teachers (name, is_director) VALUES (?, ?)');
+    const getTeacherId = db.prepare('SELECT id FROM teachers WHERE name = ?');
+
+    const insertRoom = db.prepare('INSERT OR IGNORE INTO rooms (name, is_placeholder) VALUES (?, ?)');
+    const getRoomId = db.prepare('SELECT id FROM rooms WHERE name = ?');
+
+    const insertSubject = db.prepare('INSERT OR IGNORE INTO subjects (name) VALUES (?)');
+    const getSubjectId = db.prepare('SELECT id FROM subjects WHERE name = ?');
+
+    const insertSession = db.prepare(`
+      INSERT INTO sessions (date_id, period, time, teacher_id, room_id, subject_id, group_name, title, note, max_capacity, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let importedCount = 0;
+
+    for (const item of items) {
+      if (!item.date || !item.period || !item.teacher || !item.room || !item.subject) {
+        throw new Error('Hiányos rekord a JSON fájlban (dátum, órasáv, tanár, terem és tantárgy kötelező)!');
+      }
+
+      insertDate.run(item.date.trim());
+      const dateId = getDateId.get(item.date.trim()).id;
+
+      insertTeacher.run(item.teacher.trim(), item.is_director ? 1 : 0);
+      const teacherId = getTeacherId.get(item.teacher.trim()).id;
+
+      insertRoom.run(item.room.trim(), item.is_placeholder ? 1 : 0);
+      const roomId = getRoomId.get(item.room.trim()).id;
+
+      insertSubject.run(item.subject.trim());
+      const subjectId = getSubjectId.get(item.subject.trim()).id;
+
+      const periodNum = parseInt(item.period, 10);
+      const time = item.time || PERIOD_TIMES[periodNum] || `${periodNum}. óra`;
+
+      insertSession.run(
+        dateId,
+        periodNum,
+        time,
+        teacherId,
+        roomId,
+        subjectId,
+        (item.group_name || '').trim(),
+        (item.title || '').trim(),
+        (item.note || '').trim(),
+        parseInt(item.max_capacity, 10) || 15,
+        item.is_active !== undefined ? (item.is_active ? 1 : 0) : 1
+      );
+
+      importedCount++;
+    }
+
+    return importedCount;
+  });
+
+  try {
+    const count = importTx(sessions);
+    res.json({ success: true, importedCount: count });
+  } catch (err) {
+    console.error('JSON import hiba:', err);
+    res.status(400).json({ error: `Importálási hiba: ${err.message}` });
+  }
+});
+
+// ==========================================
+// JELENTKEZŐK CSV EXPORTÁLÁSA ÉS TÖRLÉSE
+// ==========================================
+
+// Jelentkezők adatainak kimentése CSV fájlba (Excel-barát UTF-8 BOM + pontosvessző)
+app.get('/api/admin/export/registrations.csv', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT 
+      reg.id,
+      reg.role,
+      reg.name,
+      reg.email,
+      reg.school,
+      reg.has_companion,
+      reg.created_at,
+      d.date,
+      s.period,
+      s.time,
+      sub.name AS subject,
+      s.title,
+      t.name AS teacher,
+      r.name AS room
+    FROM registrations reg
+    JOIN sessions s ON reg.session_id = s.id
+    JOIN event_dates d ON s.date_id = d.id
+    JOIN teachers t ON s.teacher_id = t.id
+    JOIN rooms r ON s.room_id = r.id
+    JOIN subjects sub ON s.subject_id = sub.id
+    ORDER BY d.date ASC, s.period ASC, r.name ASC, reg.name ASC
+  `).all();
+
+  // Segédfüggvény a CSV cellák biztonságos idézőjelezésére
+  const escapeCsv = (val) => {
+    if (val === null || val === undefined) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const headers = [
+    'ID',
+    'Szerepkör',
+    'Név',
+    'E-mail cím',
+    'Általános iskola',
+    'Kísérővel érkezik',
+    'Dátum',
+    'Órasáv',
+    'Időpont',
+    'Tantárgy / Foglalkozás',
+    'Óra címe',
+    'Oktató / Igazgató',
+    'Terem',
+    'Jelentkezés ideje'
+  ];
+
+  const csvLines = [headers.map(escapeCsv).join(';')];
+
+  for (const row of rows) {
+    const line = [
+      row.id,
+      row.role === 'student' ? 'Tanuló' : 'Szülő',
+      row.name,
+      row.email,
+      row.school,
+      row.has_companion ? 'Igen (+1 fő)' : 'Nem',
+      row.date,
+      `${row.period}. óra`,
+      row.time,
+      row.subject,
+      row.title || '',
+      row.teacher,
+      row.room,
+      row.created_at
+    ].map(escapeCsv).join(';');
+
+    csvLines.push(line);
+  }
+
+  // \uFEFF = UTF-8 BOM, hogy a magyar Excel tökéletesen kezelje az ékezeteket
+  const csvContent = '\uFEFF' + csvLines.join('\r\n');
+
+  const today = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="jelentkezok_${today}.csv"`);
+  res.send(csvContent);
+});
+
+// Egyetlen jelentkező törlése
 app.delete('/api/admin/registrations/:id', requireAdmin, (req, res) => {
   db.prepare('DELETE FROM registrations WHERE id = ?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Összes jelentkező törlése egyszerre
+app.delete('/api/admin/registrations', requireAdmin, (req, res) => {
+  const info = db.prepare('DELETE FROM registrations').run();
+  res.json({ success: true, deletedCount: info.changes });
+});
+
+// Jelentkezők visszatöltése CSV-ből feldolgozott adatok alapján
+app.post('/api/admin/import/registrations', requireAdmin, (req, res) => {
+  const { registrations, replaceExisting } = req.body;
+
+  if (!Array.isArray(registrations) || registrations.length === 0) {
+    return res.status(400).json({ error: 'A feltöltött CSV fájl üres vagy nem tartalmaz érvényes jelentkezői sorokat!' });
+  }
+
+  const importRegsTx = db.transaction((items) => {
+    if (replaceExisting) {
+      db.prepare('DELETE FROM registrations').run();
+    }
+
+    // Tanóra kikeresése a természetes kulcsok (dátum, órasáv, oktató, terem, tantárgy) alapján
+    const findSessionStmt = db.prepare(`
+      SELECT s.id
+      FROM sessions s
+      JOIN event_dates d ON s.date_id = d.id
+      JOIN teachers t ON s.teacher_id = t.id
+      JOIN rooms r ON s.room_id = r.id
+      JOIN subjects sub ON s.subject_id = sub.id
+      WHERE d.date = ? AND s.period = ? AND t.name = ? AND r.name = ? AND sub.name = ?
+      LIMIT 1
+    `);
+
+    // Tartalék keresés (ha esetleg a terem időközben módosult, de a dátum, órasáv és oktató egyezik)
+    const fallbackSessionStmt = db.prepare(`
+      SELECT s.id
+      FROM sessions s
+      JOIN event_dates d ON s.date_id = d.id
+      JOIN teachers t ON s.teacher_id = t.id
+      WHERE d.date = ? AND s.period = ? AND t.name = ?
+      LIMIT 1
+    `);
+
+    const insertRegStmt = db.prepare(`
+      INSERT INTO registrations (session_id, role, name, email, school, has_companion, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let importedCount = 0;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const rowNum = i + 2; // +1 a 0-index miatt, +1 a fejléc sor miatt
+
+      if (!item.name || !item.email || !item.date || !item.period || !item.teacher) {
+        throw new Error(`Hiányos adatok a CSV ${rowNum}. sorában (név, e-mail, dátum, órasáv és oktató kötelező)!`);
+      }
+
+      // Órasáv számának kinyerése (pl. "1. óra" -> 1)
+      const periodNum = parseInt(String(item.period).replace(/\D/g, ''), 10);
+      if (isNaN(periodNum)) {
+        throw new Error(`Érvénytelen órasáv a CSV ${rowNum}. sorában: "${item.period}"`);
+      }
+
+      // Megkeressük a hozzá tartozó tanórát
+      let session = findSessionStmt.get(
+        item.date.trim(),
+        periodNum,
+        item.teacher.trim(),
+        (item.room || '').trim(),
+        (item.subject || '').trim()
+      );
+
+      if (!session) {
+        session = fallbackSessionStmt.get(
+          item.date.trim(),
+          periodNum,
+          item.teacher.trim()
+        );
+      }
+
+      if (!session) {
+        throw new Error(
+          `A CSV ${rowNum}. sorában szereplő tanóra (${item.date}, ${periodNum}. óra – ${item.teacher}) nem található az adatbázisban! Előbb töltsd be az órarendet!`
+        );
+      }
+
+      // Szerepkör normalizálása ("Tanuló" -> "student", "Szülő" -> "parent")
+      const rawRole = String(item.role || '').trim().toLowerCase();
+      const role = (rawRole === 'szülő' || rawRole === 'szulo' || rawRole === 'parent') ? 'parent' : 'student';
+
+      // Kísérő normalizálása ("Igen (+1 fő)" vagy "Igen" -> 1, egyébként 0)
+      const rawComp = String(item.has_companion || '').trim().toLowerCase();
+      const hasCompanion = (rawComp.startsWith('igen') || rawComp === '1' || rawComp === 'true') ? 1 : 0;
+
+      const createdAt = (item.created_at || '').trim() || new Date().toISOString();
+
+      insertRegStmt.run(
+        session.id,
+        role,
+        item.name.trim(),
+        item.email.trim().toLowerCase(),
+        (item.school || '').trim(),
+        hasCompanion,
+        createdAt
+      );
+
+      importedCount++;
+    }
+
+    return importedCount;
+  });
+
+  try {
+    const count = importRegsTx(registrations);
+    res.json({ success: true, importedCount: count });
+  } catch (err) {
+    console.error('CSV import hiba:', err);
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, () => {

@@ -139,8 +139,18 @@
         </div>
 
         <div class="card">
-          <h3>Meglévő órák és igazgatói beszélgetések szerkesztése</h3>
-          <p style="font-size: 0.85rem; color: #475569;">A sárga sorok az igazgatói beszélgetéseket jelölik (ezekre csak szülők jelentkezhetnek). A rendszer automatikusan tiltja a tanár- és teremütközéseket.</p>
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 10px;">
+            <div>
+              <h3 style="margin: 0;">Meglévő órák és igazgatói beszélgetések szerkesztése</h3>
+              <p style="font-size: 0.85rem; color: #475569; margin: 4px 0 0 0;">A sárga sorok az igazgatói beszélgetéseket jelölik. A rendszer automatikusan tiltja a tanár- és teremütközéseket.</p>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <button type="button" class="success" onclick="downloadSessionsCsv()">📥 Órák mentése (CSV)</button>
+              <button type="button" onclick="downloadSessionsJson()">💾 Biztonsági mentés (JSON)</button>
+              <button type="button" class="secondary" onclick="triggerJsonUpload()">📂 Visszatöltés (JSON)</button>
+              <input type="file" id="jsonImportInput" accept=".json,application/json" class="hidden" onchange="handleJsonFileUpload(event)">
+            </div>
+          </div>
           <div style="overflow-x: auto;">
             <table>
               <thead>
@@ -276,22 +286,36 @@
 
       <!-- TAB 4: JELENTKEZŐK -->
       <div id="tab-registrations" class="card hidden">
-        <h3>Regisztrált jelentkezők</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Szerepkör</th>
-              <th>Név</th>
-              <th>E-mail</th>
-              <th>Általános iskola</th>
-              <th>Kísérő</th>
-              <th>Választott óra</th>
-              <th>Terem</th>
-              <th>Törlés</th>
-            </tr>
-          </thead>
-          <tbody id="registrationsTableBody"></tbody>
-        </table>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+          <h3 style="margin: 0;">Regisztrált jelentkezők</h3>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <!--button type="button" class="success" onclick="downloadCsv()">📥 Adatok mentése CSV fájlba</button>
+            <button type="button" class="danger" onclick="deleteAllRegs()">🗑️ Összes jelentkező törlése</button-->
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+            <button type="button" class="success" onclick="downloadCsv()">📥 Adatok mentése CSV fájlba</button>
+            <button type="button" class="secondary" onclick="triggerRegCsvUpload()">📂 Visszatöltés CSV fájlból</button>
+            <input type="file" id="regCsvImportInput" accept=".csv,text/csv" class="hidden" onchange="handleRegCsvUpload(event)">
+            <button type="button" class="danger" onclick="deleteAllRegs()">🗑️ Összes jelentkező törlése</button>
+          </div>
+          </div>
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Szerepkör</th>
+                <th>Név</th>
+                <th>E-mail</th>
+                <th>Általános iskola</th>
+                <th>Kísérő</th>
+                <th>Választott óra</th>
+                <th>Terem</th>
+                <th>Törlés</th>
+              </tr>
+            </thead>
+            <tbody id="registrationsTableBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -683,11 +707,210 @@
       }
     }
 
+    function downloadCsv() {
+      // Közvetlen fájlletöltés indítása a védett admin végpontról
+      window.location.href = '/api/admin/export/registrations.csv';
+      showToast('CSV fájl letöltése elindult!', 'success');
+    }
+
     async function deleteReg(id) {
       if (!confirm('Biztosan törlöd ezt a jelentkezést?')) return;
-      await fetch(`/api/admin/registrations/${id}`, { method: 'DELETE' });
-      showToast('Jelentkezés törölve!', 'success');
-      loadDashboard();
+      const res = await fetch(`/api/admin/registrations/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast('Jelentkezés törölve!', 'success');
+        loadDashboard();
+      } else {
+        showToast('Hiba történt a törléskor!', 'error');
+      }
+    }
+
+    async function deleteAllRegs() {
+      if (!confirm('FIGYELEM! Biztosan törölni szeretnéd az ÖSSZES jelentkezőt az adatbázisból? Ez a művelet nem vonható vissza!')) return;
+      // if (!confirm('Utolsó megerősítés: Tényleg törölhető minden regisztráció?')) return;
+
+      const res = await fetch('/api/admin/registrations', { method: 'DELETE' });
+      const data = await res.json();
+
+      if (res.ok) {
+        showToast(`Összes jelentkező törölve (${data.deletedCount} rekord)!`, 'success');
+        loadDashboard();
+      } else {
+        showToast(data.error || 'Hiba történt a tömeges törléskor!', 'error');
+      }
+    }
+
+    function downloadSessionsCsv() {
+      window.location.href = '/api/admin/export/sessions.csv';
+      showToast('Órarend (CSV) letöltése elindult!', 'success');
+    }
+
+    function downloadSessionsJson() {
+      window.location.href = '/api/admin/export/sessions.json';
+      showToast('Biztonsági mentés (JSON) letöltése elindult!', 'success');
+    }
+
+    function triggerJsonUpload() {
+      const input = document.getElementById('jsonImportInput');
+      input.value = ''; // Mindig alaphelyzetbe állítjuk, hogy ugyanazt a fájlt is újra lehessen választani
+      input.click();
+    }
+
+    async function handleJsonFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          const sessionsList = Array.isArray(parsed) ? parsed : parsed.sessions;
+
+          if (!Array.isArray(sessionsList) || sessionsList.length === 0) {
+            showToast('A kiválasztott JSON fájl nem tartalmaz érvényes óraadatsort!', 'error');
+            return;
+          }
+
+          // Megkérdezzük, hogy lecserélje-e a jelenlegi órákat, vagy hozzáfűzze őket
+          const replaceExisting = confirm(
+            `Találtam ${sessionsList.length} db foglalkozást a fájlban.\n\n` +
+            `Kattints az OK gombra, ha TÖRÖLNI szeretnéd a jelenlegi órákat és teljes egészében ezzel a mentéssel helyettesíted őket.\n` +
+            `Kattints a Mégse gombra, ha csak HOZZÁFŰZNI szeretnéd őket a meglévőkhöz.`
+          );
+
+          const res = await fetch('/api/admin/import/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessions: sessionsList, replaceExisting })
+          });
+
+          const data = await res.json();
+          if (res.ok) {
+            showToast(`Sikeres visszatöltés: ${data.importedCount} db óra betöltve!`, 'success');
+            loadDashboard();
+          } else {
+            showToast(data.error || 'Hiba a JSON visszatöltésekor!', 'error');
+          }
+        } catch (err) {
+          showToast('Hibás JSON formátum: ' + err.message, 'error');
+        }
+      };
+      reader.readAsText(file, 'UTF-8');
+    }
+
+    function triggerRegCsvUpload() {
+      const input = document.getElementById('regCsvImportInput');
+      input.value = '';
+      input.click();
+    }
+
+    // Idézőjeleket és pontosvesszőt/vesszőt is pontosan kezelő CSV-sorbontó segédfüggvény
+    function parseCsvLine(line, delimiter) {
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        const nextChar = line[i + 1];
+
+        if (char === '"') {
+          if (inQuotes && nextChar === '"') {
+            current += '"';
+            i++; // Dupla idézőjel átugrása
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === delimiter && !inQuotes) {
+          result.push(current);
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      result.push(current);
+      return result;
+    }
+
+    async function handleRegCsvUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          // UTF-8 BOM eltávolítása, ha jelen van a fájl elején
+          const rawText = e.target.result.replace(/^\uFEFF/, '');
+          const lines = rawText.split(/\r?\n/).filter(line => line.trim() !== '');
+
+          if (lines.length < 2) {
+            showToast('A CSV fájl nem tartalmaz adatokat (csak fejlécet vagy üres)!', 'error');
+            return;
+          }
+
+          // Elválasztó karakter automatikus felismerése (; vagy ,)
+          const delimiter = lines[0].includes(';') ? ';' : ',';
+          const headers = parseCsvLine(lines[0], delimiter).map(h => h.trim().toLowerCase());
+
+          // Oszlopindexek megkeresése a fejléc alapján
+          const idxRole = headers.findIndex(h => h.includes('szerepkör') || h === 'role');
+          const idxName = headers.findIndex(h => h === 'név' || h === 'name');
+          const idxEmail = headers.findIndex(h => h.includes('e-mail') || h === 'email');
+          const idxSchool = headers.findIndex(h => h.includes('iskola') || h === 'school');
+          const idxComp = headers.findIndex(h => h.includes('kísérő') || h === 'has_companion');
+          const idxDate = headers.findIndex(h => h.includes('dátum') || h === 'date');
+          const idxPeriod = headers.findIndex(h => h.includes('órasáv') || h === 'period');
+          const idxSubject = headers.findIndex(h => h.includes('tantárgy') || h === 'subject');
+          const idxTeacher = headers.findIndex(h => h.includes('oktató') || h.includes('tanár') || h === 'teacher');
+          const idxRoom = headers.findIndex(h => h.includes('terem') || h === 'room');
+          const idxCreated = headers.findIndex(h => h.includes('jelentkezés ideje') || h === 'created_at');
+
+          if (idxName === -1 || idxEmail === -1 || idxDate === -1 || idxPeriod === -1 || idxTeacher === -1) {
+            showToast('A CSV fejléce nem megfelelő! Használd a rendszer által exportált CSV formátumot.', 'error');
+            return;
+          }
+
+          const parsedRegs = [];
+          for (let i = 1; i < lines.length; i++) {
+            const cols = parseCsvLine(lines[i], delimiter);
+            parsedRegs.push({
+              role: idxRole !== -1 ? cols[idxRole] : 'Tanuló',
+              name: cols[idxName],
+              email: cols[idxEmail],
+              school: idxSchool !== -1 ? cols[idxSchool] : '',
+              has_companion: idxComp !== -1 ? cols[idxComp] : 'Nem',
+              date: cols[idxDate],
+              period: cols[idxPeriod],
+              subject: idxSubject !== -1 ? cols[idxSubject] : '',
+              teacher: cols[idxTeacher],
+              room: idxRoom !== -1 ? cols[idxRoom] : '',
+              created_at: idxCreated !== -1 ? cols[idxCreated] : ''
+            });
+          }
+
+          const replaceExisting = confirm(
+            `Találtam ${parsedRegs.length} db jelentkezőt a CSV fájlban.\n\n` +
+            `Kattints az OK gombra, ha TÖRÖLNI szeretnéd a jelenlegi jelentkezőket és ezzel a listával helyettesíted őket.\n` +
+            `Kattints a Mégse gombra, ha csak HOZZÁFŰZNI szeretnéd őket a meglévőkhöz.`
+          );
+
+          const res = await fetch('/api/admin/import/registrations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ registrations: parsedRegs, replaceExisting })
+          });
+
+          const data = await res.json();
+          if (res.ok) {
+            showToast(`Sikeres visszatöltés: ${data.importedCount} db jelentkező betöltve!`, 'success');
+            loadDashboard();
+          } else {
+            showToast(data.error || 'Hiba a CSV visszatöltésekor!', 'error');
+          }
+        } catch (err) {
+          showToast('Hiba a CSV fájl olvasásakor: ' + err.message, 'error');
+        }
+      };
+      reader.readAsText(file, 'UTF-8');
     }
 
     checkAuth();
