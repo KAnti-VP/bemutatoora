@@ -103,6 +103,43 @@ function triggerAutoBackup() {
   }, 1000);
 }
 
+// Azonnali kézi szinkronizálás Google Drive-ra (visszajelzéssel)
+app.post('/api/admin/backup-drive', requireAdmin, async (req, res) => {
+  if (!process.env.GAS_EMAIL_URL) {
+    return res.status(400).json({ error: 'Nincs beállítva a GAS_EMAIL_URL környezeti változó!' });
+  }
+
+  try {
+    const backup = exportFullState();
+    const response = await fetch(process.env.GAS_EMAIL_URL, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        secret: process.env.SESSION_SECRET || 'bemutatoorak-secret',
+        action: 'save_backup',
+        backup
+      })
+    });
+
+    const rawText = await response.text();
+    let resData = {};
+    try {
+      resData = JSON.parse(rawText);
+    } catch {
+      return res.status(500).json({ error: `Váratlan válasz a Google Apps Scripttől: ${rawText.slice(0, 120)}` });
+    }
+
+    if (!response.ok || resData.error) {
+      return res.status(500).json({ error: `Google Apps Script hiba: ${resData.error || response.statusText}` });
+    }
+
+    res.json({ success: true, message: 'Adatbázis sikeresen elmentve a Google Drive-ra!' });
+  } catch (err) {
+    res.status(500).json({ error: `Hálózati hiba: ${err.message}` });
+  }
+});
+
 // Middleware: Minden sikeres adatmódosító kérés (POST/PUT/DELETE) után elindítja a mentést
 app.use((req, res, next) => {
   res.on('finish', () => {

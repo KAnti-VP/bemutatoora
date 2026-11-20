@@ -78,6 +78,7 @@
           <label for="deadlineInput" style="font-size: 0.85rem; font-weight: 700;">Jelentkezési határidő:</label>
           <input type="datetime-local" id="deadlineInput">
           <button type="button" onclick="saveDeadline()">Határidő mentése</button>
+          <button type="button" class="success" onclick="backupToDriveNow()">☁️ Mentés Drive-ra most</button>
           <button type="button" class="secondary" onclick="logout()">Kijelentkezés</button>
         </div>
       </div>
@@ -453,6 +454,21 @@
       });
       if (res.ok) showToast('Jelentkezési határidő mentve!', 'success');
       else showToast('Hiba a határidő mentésekor!', 'error');
+    }
+
+    async function backupToDriveNow() {
+      showToast('Mentés a Google Drive-ra folyamatban...', 'success');
+      try {
+        const res = await fetch('/api/admin/backup-drive', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(data.message, 'success');
+        } else {
+          showToast(data.error || 'Hiba a Drive mentés során!', 'error');
+        }
+      } catch (err) {
+        showToast('Hálózati hiba: ' + err.message, 'error');
+      }
     }
 
     function onNewTeacherChange() {
